@@ -67,11 +67,11 @@ public class GemstoneCrabKcPlugin extends Plugin
 
 	/**
 	 * Shown to everyone nearby when a fight ends. A kill is counted here when
-	 * the player fought the crab for more than {@link #MIN_FIGHT_MS}: exactly
-	 * the rule the popular "Gemstone Crab" plugin uses for its KC, so the two
-	 * plugins always count the same kills.
+	 * the player fought the crab for more than {@link #MIN_FIGHT_MS}.
 	 */
 	static final String BURROW_MESSAGE = "The gemstone crab burrows away, leaving a piece of its shell behind.";
+	/** Shown to the top 16 damage dealers when the crab burrows. Always counts as a kill. */
+	static final String KILL_MESSAGE = "You gained enough understanding of the crab to mine from its remains.";
 
 	/** How long the player must have been fighting for a burrow to count as a kill. */
 	static final long MIN_FIGHT_MS = 5 * 60 * 1000;
@@ -276,13 +276,6 @@ public class GemstoneCrabKcPlugin extends Plugin
 		}
 		killCountedThisFight = true;
 		lastKillAt = now;
-		if (mirrorsOtherPlugin())
-		{
-			// The Gemstone Crab plugin counts this kill itself; we pick up its
-			// new number when we sync a few ticks from now.
-			scheduleSync(AFTER_KILL_DELAY_TICKS, false);
-			return;
-		}
 		kills++;
 		saveCounts();
 		log.debug("Gemstone Crab kill counted ({}), KC now {}", reason, kills);
@@ -302,7 +295,7 @@ public class GemstoneCrabKcPlugin extends Plugin
 		if (message.equals(BURROW_MESSAGE))
 		{
 			// The fight is over. It counts as a kill if the player fought the
-			// crab for more than 5 minutes.
+			// crab for more than 5 minutes (top 16 also counts, below).
 			if (fightQualifies())
 			{
 				countKill("fought for 5+ minutes");
@@ -311,17 +304,16 @@ public class GemstoneCrabKcPlugin extends Plugin
 			// so sync shortly after in case its number moved.
 			scheduleSync(AFTER_KILL_DELAY_TICKS, false);
 		}
+		else if (message.equals(KILL_MESSAGE))
+		{
+			// Top 16 damage always counts, even after a shorter fight.
+			countKill("top 16 damage");
+		}
 		else
 		{
 			Matcher matcher = TOP_CRUSHERS.matcher(message);
 			if (matcher.matches() && isLocalPlayerListed(matcher.group(1)))
 			{
-				if (mirrorsOtherPlugin())
-				{
-					// Counted by the Gemstone Crab plugin; picked up on sync.
-					scheduleSync(AFTER_KILL_DELAY_TICKS, false);
-					return;
-				}
 				top3++;
 				saveCounts();
 				log.debug("Top 3 finish counted, now {}", top3);
@@ -550,7 +542,7 @@ public class GemstoneCrabKcPlugin extends Plugin
 			lastSent = request;
 			lastErrorCode = null;
 			int shown = result.getKillCount() != null ? result.getKillCount() : request.getKillCount();
-			if (shown > kills && !mirrorsOtherPlugin())
+			if (shown > kills)
 			{
 				// The leaderboard already has a higher verified number (e.g. an
 				// approved screenshot). Count up from it, so the next kill moves
@@ -667,30 +659,31 @@ public class GemstoneCrabKcPlugin extends Plugin
 
 	/** Adopt the Gemstone Crab plugin's counts when they are higher than ours. */
 	/**
-	 * True when the player also uses the "Gemstone Crab" plugin on this
-	 * character. Its KC is what players see in-game, so ours mirrors it
-	 * exactly instead of counting separately.
+	 * If the player also uses the "Gemstone Crab" plugin, start from its saved
+	 * count when that is higher than ours (e.g. the first time this plugin is
+	 * installed). After that this plugin counts kills itself.
 	 */
-	private boolean mirrorsOtherPlugin()
-	{
-		return config.importGemstoneCrabPlugin()
-			&& configManager.getRSProfileKey() != null
-			&& readInt(OTHER_PLUGIN_GROUP, OTHER_KEY_KILLS) > 0;
-	}
-
-	/** When mirroring, copy the Gemstone Crab plugin's numbers exactly. */
 	private void refreshFromOtherPlugin()
 	{
-		if (!mirrorsOtherPlugin())
+		if (!config.importGemstoneCrabPlugin() || configManager.getRSProfileKey() == null)
 		{
 			return;
 		}
 		int otherKills = readInt(OTHER_PLUGIN_GROUP, OTHER_KEY_KILLS);
 		int otherTop3 = readInt(OTHER_PLUGIN_GROUP, OTHER_KEY_TOP3);
-		if (otherKills != kills || otherTop3 != top3)
+		boolean changed = false;
+		if (otherKills > kills)
 		{
 			kills = otherKills;
+			changed = true;
+		}
+		if (otherTop3 > top3)
+		{
 			top3 = otherTop3;
+			changed = true;
+		}
+		if (changed)
+		{
 			saveCounts();
 		}
 	}
