@@ -17,8 +17,10 @@ final class SyncRequest
 	private final int killCount;
 	private final int top3Count;
 	private final String pluginVersion;
+	/** Whose count this is: the Gemstone Crab plugin's ("gemstone-crab-plugin") or ours ("own"). */
+	private final String kcSource;
 
-	SyncRequest(String accountHash, String rsn, String accountType, int killCount, int top3Count, String pluginVersion)
+	SyncRequest(String accountHash, String rsn, String accountType, int killCount, int top3Count, String pluginVersion, String kcSource)
 	{
 		this.accountHash = accountHash;
 		this.rsn = rsn;
@@ -26,6 +28,7 @@ final class SyncRequest
 		this.killCount = killCount;
 		this.top3Count = top3Count;
 		this.pluginVersion = pluginVersion;
+		this.kcSource = kcSource;
 	}
 
 	String getRsn()
@@ -55,12 +58,13 @@ final class SyncRequest
 			&& Objects.equals(accountHash, other.accountHash)
 			&& Objects.equals(rsn, other.rsn)
 			&& Objects.equals(accountType, other.accountType)
-			&& Objects.equals(pluginVersion, other.pluginVersion);
+			&& Objects.equals(pluginVersion, other.pluginVersion)
+			&& Objects.equals(kcSource, other.kcSource);
 	}
 
 	@Override
 	public int hashCode()
 	{
-		return Objects.hash(accountHash, rsn, accountType, killCount, top3Count, pluginVersion);
+		return Objects.hash(accountHash, rsn, accountType, killCount, top3Count, pluginVersion, kcSource);
 	}
 }

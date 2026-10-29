@@ -42,7 +42,7 @@ public interface GemstoneCrabKcConfig extends Config
 	@ConfigItem(
 		keyName = "importGemstoneCrabPlugin",
 		name = "Use Gemstone Crab plugin KC",
-		description = "If you also use the 'Gemstone Crab' plugin, start from its kill count when it is higher than this plugin's",
+		description = "If you also use the 'Gemstone Crab' plugin, show and sync exactly its kill count, so the numbers always match",
 		position = 2,
 		section = syncSection
 	)

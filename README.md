@@ -4,9 +4,9 @@ A RuneLite plugin that tracks your Gemstone Crab kill count and, if you turn it 
 
 ## What it does
 
-- Counts a kill each time the Gemstone Crab burrows if you fought it for more than 5 minutes or finished in the top 16 damage dealers. One kill per fight.
+- Counts kills exactly the way the popular **Gemstone Crab** plugin does: when the crab burrows, it is a kill if you fought it for more than 5 minutes.
 - Counts your "top crab crusher" (top 3) finishes.
-- If you already use the **Gemstone Crab** plugin, it starts from that plugin's kill count, so your existing KC carries over.
+- If you also use the **Gemstone Crab** plugin, it shows and syncs exactly that plugin's kill count, so the numbers always match.
 - Shows your KC, top-3 finishes and leaderboard rank in a side panel.
 - With syncing turned on, sends your KC to the leaderboard a few seconds after each kill and when you log in.
 

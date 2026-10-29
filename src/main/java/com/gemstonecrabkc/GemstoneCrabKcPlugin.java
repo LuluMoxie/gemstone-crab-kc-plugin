@@ -7,8 +7,6 @@ import java.text.NumberFormat;
 import java.util.EnumMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import javax.inject.Inject;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -65,18 +63,30 @@ public class GemstoneCrabKcPlugin extends Plugin
 	/** Sync keys are saved per character (RuneScape profile): one key per character. */
 	private static final String KEY_SYNC_KEY = "syncKey";
 
-	/**
-	 * Shown to everyone nearby when a fight ends. A kill is counted here when
-	 * the player fought the crab for more than {@link #MIN_FIGHT_MS}.
+	/*
+	 * Kill counting follows the popular "Gemstone Crab" plugin exactly, because
+	 * that is the KC players already know:
+	 *  - When that plugin is installed, we show and sync its saved numbers as-is.
+	 *  - Otherwise we count the same way it does: when the crab burrows, it is a
+	 *    kill if the time from the crab appearing to the player's last
+	 *    melee/ranged/magic XP on it is more than 5 minutes, at most once every
+	 *    5 minutes; a top-3 finish is counted from the "top three crab crushers"
+	 *    message when it names the player.
 	 */
+
+	/** Shown to everyone nearby when a fight ends. */
 	static final String BURROW_MESSAGE = "The gemstone crab burrows away, leaving a piece of its shell behind.";
-	/** Shown to the top 16 damage dealers when the crab burrows. Always counts as a kill. */
-	static final String KILL_MESSAGE = "You gained enough understanding of the crab to mine from its remains.";
+	/** "The top three crab crushers were A, B, & C!" */
+	static final String TOP3_PREFIX = "The top three crab crushers were ";
 
 	/** How long the player must have been fighting for a burrow to count as a kill. */
 	static final long MIN_FIGHT_MS = 5 * 60 * 1000;
-	/** "The top three crab crushers were A, B, & C!" or "The top crab crusher was A!" */
-	static final Pattern TOP_CRUSHERS = Pattern.compile("^The top (?:\\w+ )?crab crushers? (?:were|was) (.+?)!?$");
+	/** Burrows closer together than this are treated as the same fight. */
+	private static final long KILL_COOLDOWN_MS = 5 * 60 * 1000;
+
+	/** Tells the website whose count we're sending. */
+	static final String SOURCE_GEMSTONE_CRAB_PLUGIN = "gemstone-crab-plugin";
+	static final String SOURCE_OWN = "own";
 
 	// Our own per-account counters (stored per RuneScape profile).
 	private static final String KEY_KILLS = "killCount";
@@ -88,7 +98,6 @@ public class GemstoneCrabKcPlugin extends Plugin
 	private static final String OTHER_KEY_KILLS = "crabCount";
 	private static final String OTHER_KEY_TOP3 = "top3Count";
 
-	private static final long KILL_COOLDOWN_MS = 60_000;
 	private static final int AFTER_KILL_DELAY_TICKS = 3;
 	private static final int AFTER_LOGIN_DELAY_TICKS = 5;
 	private static final long MIN_SYNC_INTERVAL_MS = 10_000;
@@ -127,7 +136,6 @@ public class GemstoneCrabKcPlugin extends Plugin
 	private boolean crabPresent;
 	private long fightStartAt;
 	private long lastCombatXpAt;
-	private boolean killCountedThisFight;
 	private final Map<Skill, Integer> lastXp = new EnumMap<>(Skill.class);
 
 	private int syncCountdown = -1;
@@ -212,7 +220,6 @@ public class GemstoneCrabKcPlugin extends Plugin
 			crabPresent = true;
 			fightStartAt = System.currentTimeMillis();
 			lastCombatXpAt = 0;
-			killCountedThisFight = false;
 		}
 	}
 
@@ -266,19 +273,33 @@ public class GemstoneCrabKcPlugin extends Plugin
 			&& lastCombatXpAt - fightStartAt > MIN_FIGHT_MS;
 	}
 
-	/** Adds one kill, at most once per crab fight. */
-	private void countKill(String reason)
+	/** The crab burrowed: count a kill the same way the Gemstone Crab plugin does. */
+	private void onBurrow()
 	{
+		if (mirrorsOtherPlugin())
+		{
+			// The Gemstone Crab plugin counts this itself; we pick up its new
+			// number when we sync a few ticks from now.
+			scheduleSync(AFTER_KILL_DELAY_TICKS, false);
+			return;
+		}
+
 		long now = System.currentTimeMillis();
-		if (killCountedThisFight || now - lastKillAt < KILL_COOLDOWN_MS)
+		if (now - lastKillAt < KILL_COOLDOWN_MS)
 		{
 			return;
 		}
-		killCountedThisFight = true;
 		lastKillAt = now;
-		kills++;
-		saveCounts();
-		log.debug("Gemstone Crab kill counted ({}), KC now {}", reason, kills);
+		if (fightQualifies())
+		{
+			kills++;
+			saveCounts();
+			log.debug("Gemstone Crab kill counted, KC now {}", kills);
+		}
+		else
+		{
+			log.debug("Gemstone Crab not fought long enough for a kill");
+		}
 		scheduleSync(AFTER_KILL_DELAY_TICKS, false);
 	}
 
@@ -294,31 +315,17 @@ public class GemstoneCrabKcPlugin extends Plugin
 
 		if (message.equals(BURROW_MESSAGE))
 		{
-			// The fight is over. It counts as a kill if the player fought the
-			// crab for more than 5 minutes (top 16 also counts, below).
-			if (fightQualifies())
-			{
-				countKill("fought for 5+ minutes");
-			}
-			// The Gemstone Crab plugin also bumps its own count on this message,
-			// so sync shortly after in case its number moved.
-			scheduleSync(AFTER_KILL_DELAY_TICKS, false);
+			onBurrow();
 		}
-		else if (message.equals(KILL_MESSAGE))
+		else if (message.startsWith(TOP3_PREFIX) && isLocalPlayerListed(message.substring(TOP3_PREFIX.length())))
 		{
-			// Top 16 damage always counts, even after a shorter fight.
-			countKill("top 16 damage");
-		}
-		else
-		{
-			Matcher matcher = TOP_CRUSHERS.matcher(message);
-			if (matcher.matches() && isLocalPlayerListed(matcher.group(1)))
+			if (!mirrorsOtherPlugin())
 			{
 				top3++;
 				saveCounts();
 				log.debug("Top 3 finish counted, now {}", top3);
-				scheduleSync(AFTER_KILL_DELAY_TICKS, false);
 			}
+			scheduleSync(AFTER_KILL_DELAY_TICKS, false);
 		}
 	}
 
@@ -502,7 +509,8 @@ public class GemstoneCrabKcPlugin extends Plugin
 			accountType(client.getVarbitValue(VarbitID.IRONMAN)),
 			kills,
 			top3,
-			PLUGIN_VERSION);
+			PLUGIN_VERSION,
+			mirrorsOtherPlugin() ? SOURCE_GEMSTONE_CRAB_PLUGIN : SOURCE_OWN);
 
 		if (!force && request.equals(lastSent))
 		{
@@ -542,7 +550,7 @@ public class GemstoneCrabKcPlugin extends Plugin
 			lastSent = request;
 			lastErrorCode = null;
 			int shown = result.getKillCount() != null ? result.getKillCount() : request.getKillCount();
-			if (shown > kills)
+			if (shown > kills && !mirrorsOtherPlugin())
 			{
 				// The leaderboard already has a higher verified number (e.g. an
 				// approved screenshot). Count up from it, so the next kill moves
@@ -636,7 +644,7 @@ public class GemstoneCrabKcPlugin extends Plugin
 	static boolean namesContain(String names, String playerName)
 	{
 		String target = Text.standardize(playerName);
-		for (String name : names.split("[,&]"))
+		for (String name : names.split("[,&!]"))
 		{
 			if (Text.standardize(name).equals(target))
 			{
@@ -659,31 +667,29 @@ public class GemstoneCrabKcPlugin extends Plugin
 
 	/** Adopt the Gemstone Crab plugin's counts when they are higher than ours. */
 	/**
-	 * If the player also uses the "Gemstone Crab" plugin, start from its saved
-	 * count when that is higher than ours (e.g. the first time this plugin is
-	 * installed). After that this plugin counts kills itself.
+	 * True when the player also uses the "Gemstone Crab" plugin on this
+	 * character. Its KC is the one players already know, so we use it as-is.
 	 */
+	private boolean mirrorsOtherPlugin()
+	{
+		return config.importGemstoneCrabPlugin()
+			&& configManager.getRSProfileKey() != null
+			&& configManager.getRSProfileConfiguration(OTHER_PLUGIN_GROUP, OTHER_KEY_KILLS) != null;
+	}
+
+	/** When the Gemstone Crab plugin is installed, copy its numbers exactly. */
 	private void refreshFromOtherPlugin()
 	{
-		if (!config.importGemstoneCrabPlugin() || configManager.getRSProfileKey() == null)
+		if (!mirrorsOtherPlugin())
 		{
 			return;
 		}
 		int otherKills = readInt(OTHER_PLUGIN_GROUP, OTHER_KEY_KILLS);
 		int otherTop3 = readInt(OTHER_PLUGIN_GROUP, OTHER_KEY_TOP3);
-		boolean changed = false;
-		if (otherKills > kills)
+		if (otherKills != kills || otherTop3 != top3)
 		{
 			kills = otherKills;
-			changed = true;
-		}
-		if (otherTop3 > top3)
-		{
 			top3 = otherTop3;
-			changed = true;
-		}
-		if (changed)
-		{
 			saveCounts();
 		}
 	}
@@ -709,7 +715,6 @@ public class GemstoneCrabKcPlugin extends Plugin
 		crabPresent = false;
 		fightStartAt = 0;
 		lastCombatXpAt = 0;
-		killCountedThisFight = false;
 	}
 
 	private void resetSessionState()
