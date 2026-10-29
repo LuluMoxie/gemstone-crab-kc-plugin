@@ -91,8 +91,22 @@ class GemstoneCrabKcPanel extends PluginPanel
 		connectBox.add(wrap("Each character needs its own key. Log in to the character first."));
 		connectBox.add(Box.createVerticalStrut(6));
 
+		JLabel pasteLabel = new JLabel("Paste your sync key here:");
+		pasteLabel.setFont(FontManager.getRunescapeSmallFont());
+		pasteLabel.setForeground(GOLD);
+		left(pasteLabel);
+		connectBox.add(pasteLabel);
+		connectBox.add(Box.createVerticalStrut(3));
+
+		// A bright outline and lighter fill so it is obviously a text box.
 		keyField.setFont(FontManager.getRunescapeFont());
 		keyField.setToolTipText("Paste your sync key here (Ctrl+V)");
+		keyField.setBackground(new Color(60, 60, 60));
+		keyField.setForeground(Color.WHITE);
+		keyField.setCaretColor(Color.WHITE);
+		keyField.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(GOLD, 2),
+			new EmptyBorder(6, 6, 6, 6)));
 		keyField.addActionListener(e -> onConnect.accept(keyField.getText()));
 		connectBox.add(fullWidth(keyField));
 		connectBox.add(Box.createVerticalStrut(6));
