@@ -15,6 +15,7 @@ import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Player;
 import net.runelite.api.Skill;
+import net.runelite.api.WorldType;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -53,7 +54,7 @@ public class GemstoneCrabKcPlugin extends Plugin
 {
 	private static final Logger log = LoggerFactory.getLogger(GemstoneCrabKcPlugin.class);
 
-	static final String PLUGIN_VERSION = "1.0.0";
+	static final String PLUGIN_VERSION = "1.1.0";
 
 	/** RuneLite's required wording for features that talk to a 3rd-party server. */
 	static final String THIRD_PARTY_WARNING = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers";
@@ -506,7 +507,8 @@ public class GemstoneCrabKcPlugin extends Plugin
 		SyncRequest request = new SyncRequest(
 			Long.toString(accountHash),
 			Text.removeTags(local.getName()).replace('\u00A0', ' ').trim(),
-			accountType(client.getVarbitValue(VarbitID.IRONMAN)),
+			accountType(client.getVarbitValue(VarbitID.IRONMAN),
+				client.getWorldType().contains(WorldType.HARDCORE_MAIN)),
 			kills,
 			top3,
 			PLUGIN_VERSION,
@@ -610,11 +612,16 @@ public class GemstoneCrabKcPlugin extends Plugin
 	}
 
 	/**
-	 * Maps the in-game account type to the website's three leaderboards.
-	 * Group ironmen go on the Ironman board, hardcore group ironmen on Hardcore.
+	 * Maps the in-game account type to the website's leaderboards.
+	 * Characters on Hardcore Worlds have their own board. Otherwise group
+	 * ironmen go on the Ironman board and hardcore group ironmen on Hardcore.
 	 */
-	static String accountType(int ironmanVarbit)
+	static String accountType(int ironmanVarbit, boolean hardcoreWorld)
 	{
+		if (hardcoreWorld)
+		{
+			return "hardcore_world";
+		}
 		switch (ironmanVarbit)
 		{
 			case 1: // ironman
